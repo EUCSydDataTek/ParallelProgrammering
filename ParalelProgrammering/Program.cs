@@ -1,71 +1,75 @@
 ﻿using System.Diagnostics;
 
-Stopwatch watch = new Stopwatch();
-double result = 0;
-watch.Start();
+int sumX = 0;
+int sumY = 0;
+int sumZ = 0;
 
-ParallelFor();
-//result = ParallelCalculatePi(1000000000);
-//result = ParallelCalculatePiThreadSafe(1000000000);
+CancellationTokenSource cts = new CancellationTokenSource();
+//cts.CancelAfter(2000);
+Stopwatch sw = new Stopwatch();
 
-watch.Stop();
-double elapsedMS = watch.ElapsedMilliseconds;
-Console.WriteLine($"Time taken: {elapsedMS} milliseconds - Result: {result}");
-
-#region DEMO AF ParallelFor()
-static void ParallelFor()
+try
 {
-    Parallel.For(0, 20, i =>
-    {
-        Console.WriteLine($"TaskId: {Task.CurrentId} - Counter: {i}");
-        //Thread.SpinWait(100000000);   // Include this line to simulate more work
-    });
+    sw.Start();
+    // Executes SumX, SumY and SumZ in parallel
+    Parallel.Invoke(new ParallelOptions() { CancellationToken = cts.Token, MaxDegreeOfParallelism = 1 },
+       // () => { throw new Exception("Boom!"); },
+       () => sumX = SumX(cts.Token),
+       () => sumY = SumY(cts.Token),
+       () => sumZ = SumZ(cts.Token)
+     );
+
+    int total = sumX + sumY + sumZ;
+
+    sw.Stop();
+    Console.WriteLine("Sum = " + total);
+    Console.WriteLine(sw.Elapsed.TotalSeconds + " s");
 }
-#endregion
-
-#region FØRSTE FORSØG PÅ BEREGNING AF PI
-static double ParallelCalculatePi(int iterations)
+catch (OperationCanceledException operationCanceled)
 {
-    double pi = 1;
-    double multiplier = -1;
-    Parallel.For(0, (iterations - 3) / 2, loopIndex =>
-    {
-        int i = 3 + loopIndex * 2;
-        pi += 1.0 / (double)i * multiplier;
-        multiplier *= -1;
-    });
-
-    return pi * 4.0;
+    Console.WriteLine(sw.Elapsed.TotalSeconds + " s");
+    Console.WriteLine(operationCanceled.Message);
 }
-
-#endregion
-
-#region ANDET FORSØG PÅ BEREGNING AF PI
-static double ParallelCalculatePiThreadSafe(int iterations)
+catch (AggregateException errors)
 {
-    double pi = 1;
-    object combineLock = new object();
-
-    Parallel.For(0, (iterations - 3) / 2,
-        InitialiseLocalPi,
-        (int loopIndex, ParallelLoopState loopState, double localPi) =>
-        {
-            double multiplier = loopIndex % 2 == 0 ? -1 : 1;
-            int i = 3 + loopIndex * 2;
-            localPi += 1.0 / (double)i * multiplier;
-
-            return localPi;
-        },
-    (double localPi) =>
+    foreach (Exception error in errors.Flatten().InnerExceptions)
     {
-        lock (combineLock)
-        {
-            pi += localPi;
-        }
-    });
-    return pi * 4.0;
+        Console.WriteLine(error.Message);
+    }
 }
 
-static double InitialiseLocalPi() => 0.0;
+#region metoder
+static int SumX(CancellationToken ct)
+{
+    Console.WriteLine($"SumX on threadID {Thread.CurrentThread.ManagedThreadId}");
+    if (ct.IsCancellationRequested)
+    {
+        return 0;
+    }
+    Thread.Sleep(5000);
+    return 3;
+}
 
-#endregion
+static int SumY(CancellationToken ct)
+{
+    Console.WriteLine($"SumY on threadID {Thread.CurrentThread.ManagedThreadId}");
+    if (ct.IsCancellationRequested)
+    {
+        return 0;
+    }
+    Thread.Sleep(5000);
+    return 3;
+}
+
+static int SumZ(CancellationToken ct)
+{
+    Console.WriteLine($"SumZ on threadID {Thread.CurrentThread.ManagedThreadId}");
+    if (ct.IsCancellationRequested)
+    {
+        return 0;
+    }
+    Thread.Sleep(5000);
+    return 3;
+}
+
+#endregion metoder
