@@ -1,33 +1,35 @@
-﻿# Task Parallel Library (TPL)
+﻿# Parallel.ForEach
 
-MSDN: Parallel Computing: https://msdn.microsoft.com/da-dk/vstudio/bb964701
+`Parallel.ForEach` kan benyttes til alt, der implementerer `IEnumeable` (dvs. Lists, Arrays, Collections osv.):
 
-Benytter TPL (Task Parallel Library), som findes i namespacet `System.Threading.Tasks`
-
-TPL benytter _CLR thread pool_. Det betyder at den selv opdeler opgaven, styrer threads og state management og andre lowlevel detaljer.
-
-`System.Threading.Tasks.Parallel` klassen indeholder tre static metoder:
-
-- `Parallel.Invoke()`
-- `Parallel.For()`
-- `Parallel.ForEach()`
-
-Klassen `ParallelOptions` har nogle properties, der giver mulighed for nogle få indstillinger:
-
-- `MaxDegreeOfParallelism`: angiver maksimalt antal tasks, der må kører i parallel). Ofte vil det være det samme, som antal cpu-kerner.
-- `CancellationToken`: Giver mulighed for at forhindre at nye tasks startes. Igangværende køres færdig.
-- `TaskScheduler`: Giver mulighed for at skrive sin egen Taskscheduler.
-
-## Parallel Loops
-Umiddelbart skulle man tro at en løkke er en god kandidat for parallel-processing – men det er ikke altid tilfældet. Det kræver at rækkefølgen af afviklingen kan tåle at være tilfældig. En algoritme til beregning af f.eks. [Fibonacci-tallene](https://matnat.dk/matematik/aritmetik-og-algebra/tal/fibonacci-tal) vil slet ikke kunne leve op til dette.
-
-### Parallel.For
 ```C#
-Parallel.For(0, 20, i =>
+IEnumerable<int> items = Enumerable.Range(0, 20);
+
+Parallel.ForEach(items, i =>
 {
-    Console.WriteLine(i);
+    Console.WriteLine($"TaskId: {Task.CurrentId} - Counter: {i}");
 });
 ```
-TPL prøver at estimere hvor mange tasks, der er nødvendigt for at løse opgaven. Tager det længere tid, sætter den flere tasks i gang.
 
-Se to andre eksempler i __2.ParallelFor__, som viser eksempler på en algoritme til beregning af PI, hvor mange af problemerne ved parallel-beregninger viser sig.
+I modsætning til `Parallel.For` som kun kunne arbejde med en counter af typen `int` eller `long`, så kan man her lave sin egen iterator-metode og derved f.eks. løbe intervallet 0 – 2 igennem med steps på 0.1:
+
+```C#
+static void SmallStepsForEach()
+{
+    Parallel.ForEach(FromTo(1, 2, 0.1), Console.WriteLine);
+}
+
+private static IEnumerable<double> FromTo(double start, double end, double step)
+{
+    for (double current = start; current < end; current += step)
+    {
+        yield return current;
+    }
+}
+```
+
+Det største problem for `Parallel.ForEach` (i modsætning til `Parallel.For`) er hvis den ikke kender antallet af items, der skal løbes igennem. Hvis collectionen er en ren `IEnumerable` objekt kan det ikke fortælle noget om størrelsen. Det betyder at `Parallel.ForEach` må begynde med kun at give et lille antal items til hver Tasks. Efterhånden vil den dog skrue op for antallet af items/task og denne proces kaldes _Partitioning_.
+
+Derfor prøver den under runtime at finder ud af om `IEnumerable` i virkeligheden er et array eller en `IList<T>`, fordi den så vil kunne benytte henholdsvis `Count` og `Length` properties til at få størrelsen oplyst.
+
+Det er derfor at `Parallel.ForEach` arbejder bedst på enten arrays eller `List<T>`.

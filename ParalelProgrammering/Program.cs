@@ -1,75 +1,30 @@
-﻿using System.Diagnostics;
+﻿
+NormalForEach();
+//SmallStepsForEach();
 
-int sumX = 0;
-int sumY = 0;
-int sumZ = 0;
-
-CancellationTokenSource cts = new CancellationTokenSource();
-//cts.CancelAfter(2000);
-Stopwatch sw = new Stopwatch();
-
-try
+#region *** Normal ForEach ***
+static void NormalForEach()
 {
-    sw.Start();
-    // Executes SumX, SumY and SumZ in parallel
-    Parallel.Invoke(new ParallelOptions() { CancellationToken = cts.Token, MaxDegreeOfParallelism = 1 },
-       // () => { throw new Exception("Boom!"); },
-       () => sumX = SumX(cts.Token),
-       () => sumY = SumY(cts.Token),
-       () => sumZ = SumZ(cts.Token)
-     );
+    IEnumerable<int> items = Enumerable.Range(0, 20);
 
-    int total = sumX + sumY + sumZ;
-
-    sw.Stop();
-    Console.WriteLine("Sum = " + total);
-    Console.WriteLine(sw.Elapsed.TotalSeconds + " s");
-}
-catch (OperationCanceledException operationCanceled)
-{
-    Console.WriteLine(sw.Elapsed.TotalSeconds + " s");
-    Console.WriteLine(operationCanceled.Message);
-}
-catch (AggregateException errors)
-{
-    foreach (Exception error in errors.Flatten().InnerExceptions)
+    Parallel.ForEach(items, i =>
     {
-        Console.WriteLine(error.Message);
+        Console.WriteLine($"TaskId: {Task.CurrentId} - Counter: {i}");
+    });
+}
+#endregion
+
+#region *** ForEach with double ***
+static void SmallStepsForEach()
+{
+    Parallel.ForEach(FromTo(1, 2, 0.1), Console.WriteLine);
+}
+
+private static IEnumerable<double> FromTo(double start, double end, double step)
+{
+    for (double current = start; current < end; current += step)
+    {
+        yield return current;
     }
 }
-
-#region metoder
-static int SumX(CancellationToken ct)
-{
-    Console.WriteLine($"SumX on threadID {Thread.CurrentThread.ManagedThreadId}");
-    if (ct.IsCancellationRequested)
-    {
-        return 0;
-    }
-    Thread.Sleep(5000);
-    return 3;
-}
-
-static int SumY(CancellationToken ct)
-{
-    Console.WriteLine($"SumY on threadID {Thread.CurrentThread.ManagedThreadId}");
-    if (ct.IsCancellationRequested)
-    {
-        return 0;
-    }
-    Thread.Sleep(5000);
-    return 3;
-}
-
-static int SumZ(CancellationToken ct)
-{
-    Console.WriteLine($"SumZ on threadID {Thread.CurrentThread.ManagedThreadId}");
-    if (ct.IsCancellationRequested)
-    {
-        return 0;
-    }
-    Thread.Sleep(5000);
-    return 3;
-}
-
-#endregion metoder
+#endregion
