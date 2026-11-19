@@ -1,71 +1,145 @@
-﻿// LoopStateBreaking(): Når RandomNumber = 1 standser den aktuelle Task blot med at starte nye tasks – 
-//      dem der er i gang vil gøre deres arebejde færdigt!
-// LoopStateBreak(): Når RandomNumber = 1 vil igangværende tasks ikke prøve at køre flere iterationer, 
-//      kun igangværende iterationer kører færdigt.
+﻿using System.Diagnostics;
 
+Execute(ParallelCalculatePiThreadSafe, "Parallel SingleLoop   ");
+Execute(NonParallelNestedLoopsCalculatePi, "NonParallel NestedLoop");
+Execute(ParallelNestedLoopsCalculatePi, "Parallel NestedLoop   ");
+Execute(OptimizedParallelCalculatePiWithPartitioner, "With Partitioner      ");
 
-LoopStateBreak();
-//LoopStateStop();
-//LoopStateObserve();
-
-
-static void LoopStateBreak()
+static void Execute(Func<int, double> pgm, string version)
 {
-    Random rnd = new Random();
-    Parallel.For(0, 100, (i, loopState) =>
-    {
-        if (rnd.Next(1, 50) == 1)
-        {
-            Console.WriteLine("Task Id: {0} : Breaking on i = {1} and no more new Tasks are instantiated!", Task.CurrentId, i);
-            loopState.Break();
-            return;
+    Stopwatch watch = new Stopwatch();
+    double result = 0;
+    watch.Start();
 
-        }
-        Console.WriteLine("Task Id: {0} : {1}", Task.CurrentId, i);
-    });
+    result = pgm(1000000000);
+
+    watch.Stop();
+    double elapsedMS = watch.ElapsedMilliseconds;
+    Console.WriteLine($"{version}: Time taken: {elapsedMS} milliseconds - Result: {result}");
 }
 
-static void LoopStateStop()
+#region *** Parallel Single loop ***
+static double ParallelCalculatePiThreadSafe(int iterations)
 {
-    Random rnd = new Random();
-    Parallel.For(0, 100, (i, loopState) =>
-    {
-        if (rnd.Next(1, 50) == 1)
+    double pi = 1;
+    object combineLock = new object();
+
+    Parallel.For(0, (iterations - 3) / 2,
+        InitialiseLocalPi,
+        (int loopIndex, ParallelLoopState loopState, double localPi) =>
         {
-            Console.WriteLine("Task Id: {0} : Stopping on i= {1} and only ongoing iterations are fullfilled", Task.CurrentId, i);
-            loopState.Stop();
-            return;
+            double multiplier = loopIndex % 2 == 0 ? -1 : 1;
+            int i = 3 + loopIndex * 2;
+            localPi += 1.0 / (double)i * multiplier;
 
+            return localPi;
+        },
+    (double localPi) =>
+    {
+        lock (combineLock)
+        {
+            pi += localPi;
         }
-
-        Console.WriteLine("{0} : {1}", Task.CurrentId, i);
     });
+    return pi * 4.0;
+}
+static double InitialiseLocalPi() => 0.0;
+
+#endregion
+
+#region *** NonParallel NestedLoop ***
+static double NonParallelNestedLoopsCalculatePi(int iterations)
+{
+    IEnumerable<Tuple<int, int>> ranges = Range(3, iterations, 10000);
+    double pi = 1;
+
+    foreach (var range in ranges)
+    {
+        double multiplier = range.Item1 % 2 == 0 ? 1 : -1;
+
+        for (int i = range.Item1; i < range.Item2; i += 2)
+        {
+            pi += 1.0 / (double)i * multiplier;
+            multiplier *= -1;
+        }
+    }
+    pi *= 4.0;
+    return pi;
 }
 
-static void LoopStateObserve()
+static IEnumerable<Tuple<int, int>> Range(int start, int end, int size)
 {
-    Random rnd = new Random();
-
-    ParallelLoopResult loopResult = Parallel.For(0, 100, (i, loopState) =>
+    for (int i = start; i < end; i += size)
     {
-        if (rnd.Next(1, 50) == 1)
-        {
-            Console.WriteLine("Task Id: {0} : Stopping on {1}", Task.CurrentId, i);
-            loopState.Stop();
-            return;
-        }
-
-        Thread.Sleep(10);
-
-        if (loopState.IsStopped)
-        {
-            Console.WriteLine("Task Id: {0}:STOPPED", Task.CurrentId);
-            return;
-        }
-
-        Console.WriteLine("Task Id: {0} : {1}", Task.CurrentId, i);
-    });
-
-
-    Console.WriteLine("Loop ran to completion {0}", loopResult.IsCompleted);
+        yield return Tuple.Create(i, Math.Min(i + size, end));
+    }
 }
+#endregion
+
+#region *** Parallel NestedLoop ***
+static double ParallelNestedLoopsCalculatePi(int iterations)
+{
+    IEnumerable<Tuple<int, int>> ranges = Range(3, iterations, 10000);
+    double pi = 1;
+    object combineLock = new object();
+
+    Parallel.ForEach(ranges.ToList(),
+        () => 0.0,
+        (range, loopState, localPi) =>
+        {
+            double multiplier = range.Item1 % 2 == 0 ? 1 : -1;
+
+            for (int i = range.Item1; i < range.Item2; i += 2)
+            {
+                localPi += 1.0 / (double)i * multiplier;
+                multiplier *= -1;
+            }
+
+            return localPi;
+        },
+        localPi =>
+        {
+            lock (combineLock)
+            {
+                pi += localPi;
+            }
+        });
+    pi *= 4.0;
+
+    return pi;
+}
+#endregion
+
+#region *** Parallel NestedLoop With Partitioner ***
+static double OptimizedParallelCalculatePiWithPartitioner(int iterations)
+{
+    //IEnumerable<Tuple<int, int>> ranges = Range(3, iterations, 10000);
+    var ranges = System.Collections.Concurrent.Partitioner.Create(3, iterations, 10000);
+
+    double pi = 1;
+    object combineLock = new object();
+    Parallel.ForEach(ranges, () => 0.0,
+        (range, loopState, localPi) =>
+        {
+            double multiplier = range.Item1 % 2 == 0 ? 1 : -1;
+
+            for (int i = range.Item1; i < range.Item2; i += 2)
+            {
+                localPi += 1.0 / (double)i * multiplier;
+                multiplier *= -1;
+            }
+
+            return localPi;
+        },
+        localPi =>
+        {
+            lock (combineLock)
+            {
+                pi += localPi;
+            }
+        });
+    pi *= 4.0;
+
+    return pi;
+}
+#endregion
