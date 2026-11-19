@@ -1,35 +1,45 @@
-﻿# Parallel.ForEach
+﻿# ParallelLoopState
 
-`Parallel.ForEach` kan benyttes til alt, der implementerer `IEnumeable` (dvs. Lists, Arrays, Collections osv.):
+I en synkron løkke kan man hoppe ud af den vha. `break`. I et forsøg på at lave noget der ligner, har både `Parallel.For` og `Parallel.ForEach` en overload, der tager imod et `ParallelLoopState` objekt, der giver mulighed for at sende et signal til delegate-metoden om at den skal standse med at oprette nye tasks, samt spørge på status.
+
+Her ses et eksempel, der ligner en normal `break` lidt. Men det man standser er blot processen med at starte nye tasks – dem der er i gang vil stadigvæk gøre deres arbejde færdigt:
 
 ```C#
-IEnumerable<int> items = Enumerable.Range(0, 20);
+Random rnd = new Random();
 
-Parallel.ForEach(items, i =>
+Parallel.For(0, 100, (i, loopState) =>
 {
-    Console.WriteLine($"TaskId: {Task.CurrentId} - Counter: {i}");
+    if (rnd.Next(1, 50) == 1)
+    {
+        Console.WriteLine("Task Id: {0} : Breaking on i = {1} and no more new Tasks are instantiated!", Task.CurrentId, i);
+        loopState.Break();
+        return;
+
+    }
+    Console.WriteLine("Task Id: {0} : {1}", Task.CurrentId, i);
 });
 ```
 
-I modsætning til `Parallel.For` som kun kunne arbejde med en counter af typen `int` eller `long`, så kan man her lave sin egen iterator-metode og derved f.eks. løbe intervallet 0 – 2 igennem med steps på 0.1:
+Hvis man blot ønsker at standse løkken så hurtigt som muligt og kan leve med at tidligere gennemløb måske ikke er helt afsluttede, så kan man benytte `Stop()` i stedet for `Break()`:
 
 ```C#
-static void SmallStepsForEach()
-{
-    Parallel.ForEach(FromTo(1, 2, 0.1), Console.WriteLine);
-}
+Random rnd = new Random();
 
-private static IEnumerable<double> FromTo(double start, double end, double step)
+Parallel.For(0, 100, (i, loopState) =>
 {
-    for (double current = start; current < end; current += step)
+    if (rnd.Next(1, 50) == 1)
     {
-        yield return current;
+        Console.WriteLine("Task Id: {0} : Stopping on i= {1} and only ongoing iterations are fullfilled", Task.CurrentId, i);
+        loopState.Stop();
+        return;
+
     }
-}
+
+    Console.WriteLine("{0} : {1}", Task.CurrentId, i);
+});
 ```
 
-Det største problem for `Parallel.ForEach` (i modsætning til `Parallel.For`) er hvis den ikke kender antallet af items, der skal løbes igennem. Hvis collectionen er en ren `IEnumerable` objekt kan det ikke fortælle noget om størrelsen. Det betyder at `Parallel.ForEach` må begynde med kun at give et lille antal items til hver Tasks. Efterhånden vil den dog skrue op for antallet af items/task og denne proces kaldes _Partitioning_.
+Nu vil igangværende tasks ikke prøve at køre flere iterationer, kun igangværende iterationer kører færdigt.
 
-Derfor prøver den under runtime at finder ud af om `IEnumerable` i virkeligheden er et array eller en `IList<T>`, fordi den så vil kunne benytte henholdsvis `Count` og `Length` properties til at få størrelsen oplyst.
+ParallelLoopState objektet har en property `IsCompleted`, der bliver false hvis enten en `Stop` eller `Break` har været aktiveret.
 
-Det er derfor at `Parallel.ForEach` arbejder bedst på enten arrays eller `List<T>`.
