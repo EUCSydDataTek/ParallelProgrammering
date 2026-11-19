@@ -20,7 +20,7 @@ static void SmallStepsForEach()
     Parallel.ForEach(FromTo(1, 2, 0.1), Console.WriteLine);
 }
 
-private static IEnumerable<double> FromTo(double start, double end, double step)
+static IEnumerable<double> FromTo(double start, double end, double step)
 {
     for (double current = start; current < end; current += step)
     {
